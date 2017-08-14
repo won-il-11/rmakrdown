@@ -1,0 +1,8 @@
+name: Publish Document
+title:
+account: rpubs
+server: rpubs.com
+appId: https://api.rpubs.com/api/v1/document/299473/92d8772997a54aa6a0a5100b42adaccf
+bundleId: https://api.rpubs.com/api/v1/document/299473/92d8772997a54aa6a0a5100b42adaccf
+url: http://rpubs.com/yimjaeone/299473
+when: 1502733636.1986

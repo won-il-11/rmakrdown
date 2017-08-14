@@ -1,0 +1,141 @@
+---
+title: "Analysis of Weather Event - Impact on Health and Economy"
+author: "wonilChoi"
+date: "2017?…„ 8?›” 13?¼"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+```
+
+## Reproducible research
+###Peer-graded Assignment: Course Project 2
+
+```{r setting}
+suppressPackageStartupMessages({
+    library(data.table)
+    library(reshape2)
+    library(ggplot2)
+    library(R.utils)
+    library(gridExtra)
+})
+setwd("D:\\R\\PeerAssignment_ReproducibleResearch")
+sessionInfo()
+```
+
+
+## Synopsis
+
+> This document explain how much each weather event cause harmful result. Data is from U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database start in the year 1950 and end in November 2011. Descriptive statistic is used to measure losses. The Most serious weather event regarding public health is tornado. Flood caused biggest economic cost.
+
+***
+
+* current time data downloaded : 13/08/2017 23:41
+* data file name is 'repdata%2Fdata%2FStormData.csv.bz2'. When data file is not exsist on getwd(), download and unzip it. To unzip bz2 file type, 'R.utils' package required. fread is fast read function in data.table package. raw data file is extracted to use fread function easily.
+
+## Data process
+```{r dataRead}
+
+# data download when it doesn't exsist.
+fileName <- "repdata%2Fdata%2FStormData.csv.bz2"
+if (!fileName %in% list.files()) {
+    fileUrl <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+    download.file(fileUrl, fileName)
+    bunzip2(filename = fileName, remove = FALSE)
+}
+
+# data read
+raw_data <- fread(gsub(".bz2", "", fileName))
+```
+    
+
+```{r dataProcess}
+
+#pick columns to analyze on raw data. 
+sub_data <- raw_data[, .(EVTYPE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP)]
+
+# explore data checking unique values
+uniqFun <- function(x) sub_data[,.GRP,by = eval(names(sub_data)[x])]
+uniq_list <- lapply(1:length(sub_data), uniqFun)
+uniq_list[c(1,5,7)]
+# the other no special on unique value
+# There are lots of levels on EVTYPE as factor , so investigate more
+(ev_tab <- sort(table(sub_data$EVTYPE), decreasing = TRUE))[1:10]
+EVTYPE_prop <- sum(head(ev_tab,10))/dim(sub_data)[1]
+(EVTYPE_prop <- sprintf("%.0f%%", 100 * EVTYPE_prop))
+# top 10 EVTYPE proportion - 89%
+
+# change character scale into numerical scale
+sub_data[, PROPDMGSCALE := 1e0]
+sub_data[PROPDMGEXP %in% c("K"), PROPDMGSCALE := 1e3]
+sub_data[PROPDMGEXP %in% c("H","h"), PROPDMGSCALE := 1e2]
+sub_data[PROPDMGEXP %in% c("M","m"), PROPDMGSCALE := 1e6]
+sub_data[PROPDMGEXP %in% c("B","b"), PROPDMGSCALE := 1e9]
+
+sub_data[, CROPDMGSCALE := 1e0]
+sub_data[CROPDMGEXP %in% c("K","k"), CROPDMGSCALE := 1e3]
+sub_data[CROPDMGEXP %in% c("M","m"), CROPDMGSCALE := 1e6]
+sub_data[CROPDMGEXP %in% c("B"), CROPDMGSCALE := 1e9]
+
+## comparing before and after
+# sub_data[, .(PROPSCALE_N = .N), by = PROPDMGSCALE]
+# head(sub_data[, .(PROPEXP_N = .N), by = PROPDMGEXP])
+# sub_data[, .(CROPSCALE_N = .N), by = CROPDMGSCALE]
+# head(sub_data[, .(CROPEXP_N = .N), by = CROPDMGEXP])
+
+```
+* First, I checked whethere data is ready for analysis. EVTYPE, our important variable has many similar elements such as "ICE ROADS" and "SNOW/ICE". However, top 10 EVTYPE account for `r EVTYPE_prop`, so remainer ignored considering less importance.
+* FATALITY and INJURIES are nothing to change.
+* PROPDMG, CROPDMG variable are actually consisted of 2 columns - DMG \times DMGEXP - which must be transformed into numeric data. When changing DMGEXP into numeric, some vague rows such as + and integer are ignored, and results are fine comparing tables counting PROPDMGEXP - its influence under 0.1%. Finally, PROP_LOSS = PROPDMGSCALE \times PROPDMG, CROP_LOSS = CROPDMGSCALE \times CROPDMG.
+
+***
+
+## Result
+
+### Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+
+```{r health}
+# make table for plot
+HEALTH_table <- 
+    sub_data[,list(FATAL = sum(FATALITIES), 
+                   INJUR = sum(INJURIES), 
+                   TOTAL = sum(FATALITIES, INJURIES),
+                   COUNT = .N),
+             by = EVTYPE][order(-TOTAL)][1:8]
+HEALTH_table
+HEALTH_table <- melt(HEALTH_table, id.vars = 1, measure.vars = c(2,3,4))
+
+HEALTH_plot <- ggplot(HEALTH_table, aes(x = EVTYPE, y = value, fill = variable)) +
+    geom_col(position = "dodge") +
+    labs(x = "EVENT TYPE",
+        y = "COUNT",
+        caption = "TOTAL is sum of FATALITY and INJURY. It is criterion of selecting Top 8",
+        title = "Top 8 event affecting public health"
+    )
+HEALTH_plot
+```
+
+### Across the United States, which types of events have the greatest economic consequences?
+```{r economic}
+tmp <- sub_data[, list(PROP_LOSS = PROPDMGSCALE * PROPDMG, CROP_LOSS = CROPDMGSCALE * CROPDMG), by = EVTYPE]
+
+ECONO_table <- 
+    tmp[,list(PropertyLoss = sum(PROP_LOSS), 
+                   CropLoss = sum(CROP_LOSS), 
+                   TOTAL = sum(PROP_LOSS, CROP_LOSS),
+                   COUNT = .N),
+             by = EVTYPE][order(-TOTAL)][1:8]
+ECONO_table
+ECONO_table <- melt(ECONO_table, id.vars = 1, measure.vars = c(2,3,4))
+
+ECONO_plot <- ggplot(ECONO_table, aes(x = EVTYPE, y = value, fill = variable)) +
+    geom_col(position = "dodge") +
+    theme(axis.text.x = element_text(angle = 11, size = 8)) +
+    labs(x = "EVENT TYPE",
+        y = "AMOUNT OF LOSS",
+        caption = "TOTAL is sum of Losses. It is criterion of selecting Top 8",
+        title = "Top 8 event affecting economy"
+    )
+ECONO_plot
+```
